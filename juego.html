@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Juego de Caras con Dificultad</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            display: block;
+            cursor: crosshair;
+        }
+        #menu, #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+        }
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="menu">
+        <h1>Juego de Caras</h1>
+        <h2>Elige la dificultad:</h2>
+        <button onclick="startGame('facil')">Fácil</button>
+        <button onclick="startGame('normal')">Normal</button>
+        <button onclick="startGame('dificil')">Difícil</button>
+        <button onclick="startGame('imposible')">Imposible</button>
+    </div>
+    <div id="gameOver" style="display: none;">
+        <h1>Game Over</h1>
+        <p>Enemigos eliminados: <span id="score"></span></p>
+        <button onclick="showMenu()">Volver al Menú</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const menuEl = document.getElementById('menu');
+        const gameOverEl = document.getElementById('gameOver');
+        const scoreEl = document.getElementById('score');
+
+        let gameState = 'menu';
+        let score = 0;
+        let monsterSpeed = 1; // Ajuste inicial de la velocidad
+        let spawnRate = 120; // Frecuencia de aparición de enemigos
+        let spawnCounter = 0;
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        const player = {
+            x: window.innerWidth / 2,
+            y: window.innerHeight / 2,
+            size: 20,
+            speed: 5
+        };
+
+        const bullets = [];
+        const bulletSpeed = 7;
+        const monsters = [];
+
+        const keys = {};
+
+        function drawFace(x, y, size, isHappy) {
+            ctx.beginPath();
+            ctx.arc(x, y, size, 0, Math.PI * 2);
+            ctx.fillStyle = isHappy ? 'yellow' : 'red';
+            ctx.fill();
+            ctx.strokeStyle = 'black';
+            ctx.stroke();
+
+            const eyeSize = size / 5;
+            ctx.fillStyle = 'black';
+            ctx.beginPath();
+            ctx.arc(x - size/3, y - size/5, eyeSize, 0, Math.PI * 2);
+            ctx.arc(x + size/3, y - size/5, eyeSize, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.beginPath();
+            if (isHappy) {
+                ctx.arc(x, y, size/2, 0, Math.PI);
+            } else {
+                ctx.arc(x, y + size/2, size/2, Math.PI, Math.PI * 2);
+            }
+            ctx.stroke();
+        }
+
+        function drawPlayer() {
+            drawFace(player.x, player.y, player.size, true);
+        }
+
+        function drawBullets() {
+            ctx.fillStyle = 'black';
+            bullets.forEach(bullet => {
+                ctx.beginPath();
+                ctx.arc(bullet.x, bullet.y, 3, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function drawMonsters() {
+            monsters.forEach(monster => {
+                drawFace(monster.x, monster.y, 15, false);
+            });
+        }
+
+        function movePlayer() {
+            if (keys['a'] && player.x > player.size) player.x -= player.speed;
+            if (keys['d'] && player.x < canvas.width - player.size) player.x += player.speed;
+            if (keys['w'] && player.y > player.size) player.y -= player.speed;
+            if (keys['s'] && player.y < canvas.height - player.size) player.y += player.speed;
+        }
+
+        function moveBullets() {
+            bullets.forEach((bullet, index) => {
+                bullet.x += bullet.dx;
+                bullet.y += bullet.dy;
+                if (bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height) {
+                    bullets.splice(index, 1);
+                }
+            });
+        }
+
+        function moveMonsters() {
+            monsters.forEach(monster => {
+                const dx = player.x - monster.x;
+                const dy = player.y - monster.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                monster.x += (dx / distance) * monsterSpeed;
+                monster.y += (dy / distance) * monsterSpeed;
+            });
+        }
+
+        function checkCollisions() {
+            bullets.forEach((bullet, bulletIndex) => {
+                monsters.forEach((monster, monsterIndex) => {
+                    if (Math.hypot(bullet.x - monster.x, bullet.y - monster.y) < 20) {
+                        bullets.splice(bulletIndex, 1);
+                        monsters.splice(monsterIndex, 1);
+                        score++;
+                    }
+                });
+            });
+
+            monsters.forEach(monster => {
+                if (Math.hypot(player.x - monster.x, player.y - monster.y) < player.size + 15) {
+                    gameOver();
+                }
+            });
+        }
+
+        function spawnMonster() {
+            const side = Math.floor(Math.random() * 4);
+            let x, y;
+            switch (side) {
+                case 0: x = 0; y = Math.random() * canvas.height; break;
+                case 1: x = canvas.width; y = Math.random() * canvas.height; break;
+                case 2: x = Math.random() * canvas.width; y = 0; break;
+                case 3: x = Math.random() * canvas.width; y = canvas.height; break;
+            }
+            monsters.push({ x, y });
+        }
+
+        function gameLoop() {
+            if (gameState === 'playing') {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                movePlayer();
+                moveBullets();
+                moveMonsters();
+                checkCollisions();
+
+                spawnCounter++;
+                if (spawnCounter >= spawnRate) {
+                    spawnMonster();
+                    spawnCounter = 0;
+                }
+
+                drawPlayer();
+                drawBullets();
+                drawMonsters();
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        function startGame(difficulty) {
+            gameState = 'playing';
+            score = 0;
+            monsters.length = 0;
+            bullets.length = 0;
+            player.x = window.innerWidth / 2;
+            player.y = window.innerHeight / 2;
+
+            switch (difficulty) {
+                case 'facil':
+                    monsterSpeed = 1;  // Aumenta la velocidad para que no sea tan lenta
+                    spawnRate = 40;    // Los enemigos aparecen 3 veces más rápido
+                    break;
+                case 'normal':
+                    monsterSpeed = 1.5;
+                    spawnRate = 30;
+                    break;
+                case 'dificil':
+                    monsterSpeed = 2;
+                    spawnRate = 20;
+                    break;
+                case 'imposible':
+                    monsterSpeed = 3;
+                    spawnRate = 10;
+                    break;
+            }
+
+            menuEl.style.display = 'none';
+            gameOverEl.style.display = 'none';
+            gameLoop();
+        }
+
+        function gameOver() {
+            gameState = 'gameOver';
+            scoreEl.textContent = score;
+            gameOverEl.style.display = 'block';
+        }
+
+        function showMenu() {
+            gameState = 'menu';
+            menuEl.style.display = 'block';
+            gameOverEl.style.display = 'none';
+        }
+
+        document.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+        });
+
+        canvas.addEventListener('click', (e) => {
+            if (gameState === 'playing') {
+                const angle = Math.atan2(e.clientY - player.y, e.clientX - player.x);
+                bullets.push({
+                    x: player.x,
+                    y: player.y,
+                    dx: Math.cos(angle) * bulletSpeed,
+                    dy: Math.sin(angle) * bulletSpeed
+                });
+            }
+        });
+    </script>
+</body>
+</html>
